@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:data-mapper="http://www.mulesoft.org/schema/mule/ee/data-mapper"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:jdbc-ee="http://www.mulesoft.org/schema/mule/ee/jdbc"
+	xmlns:file="http://www.mulesoft.org/schema/mule/file"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/data-mapper http://www.mulesoft.org/schema/mule/ee/data-mapper/current/mule-data-mapper.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/jdbc http://www.mulesoft.org/schema/mule/ee/jdbc/current/mule-jdbc-ee.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd">
+
+
+
+	<flow name="AWS_UnzipFiles"  processingStrategy="synchronous">    
+
+		<file:inbound-endpoint path="${General.fileroot}/${aws.subdirectory}/${aws.esb.zip.folder}" responseTimeout="10000" doc:name="File" pollingFrequency="${aws.unzip.pollingFrequency}" connector-ref="File"/>
+
+		<message-properties-transformer scope="invocation"  doc:name="CommonValues">
+			<add-message-property key="BatchZipName" value="#[header:filename]"/>
+			<add-message-property key="currentPayload" value="#[payload]"/>
+			<add-message-property key="extractToDir" value="${General.fileroot}/${aws.subdirectory}/${General.inputdirectory}"/>
+			<add-message-property key="inputFolder" value="${General.fileroot}/${aws.subdirectory}/${aws.esb.zip.folder}"/>
+			<add-message-property key="outputFolder" value="${General.fileroot}/${aws.subdirectory}/${General.inputdirectory}"/>		
+			<add-message-property key="outputImageFolder" value="${aws.output.unzipfolder}"/> 
+			<add-message-property key="xmlName" value="''"/>					
+			<add-message-property key="fileList" value="#[new ArrayList()]"/>		
+			<add-message-property key="noOfDocsFromZip" value="0"/>	
+			<add-message-property key="failFolder" value="${aws.failed.folder}"/>	
+		</message-properties-transformer>
+		<message-properties-transformer scope="session" doc:name="CommonValues">
+			<add-message-property key="hostserver" value="${General.hostserver}"/>	
+		</message-properties-transformer>
+			 
+		<db:insert config-ref="Database" doc:name="InsertBatch">
+		<db:parameterized-query><![CDATA[insert into aws.awsbatch
+		(batchName,Status,Servername) 
+		values (#[flowVars['BatchZipName']],'New',#[sessionVars.hostserver])]]>
+		</db:parameterized-query>
+		</db:insert>		
+			   
+		<component class="uk.co.aws.component.UnzipFileComponent" doc:name="Unzipping using Java"/>
+	  
+		<db:update config-ref="Database" doc:name="UpdateXmlName">
+		<db:parameterized-query><![CDATA[update aws.awsbatch
+		set XmlName=#[payload.toString()] , NoOfDocsFromZip =  #[flowVars['noOfDocsFromZip']]
+		where BatchName=#[flowVars['BatchZipName']]
+		]]></db:parameterized-query>
+		</db:update>
+			
+		<set-payload value="#[flowVars['currentPayload']]" doc:name="Set Payload"/>	
+
+		<file:outbound-endpoint connector-ref="File1" responseTimeout="10000" doc:name="File" outputPattern="#[flowVars['BatchZipName']]" path="${aws.esb.image.folder}/${General.hostserver}/${aws.zip.moveto.folder}" /> 	
+		<invoke object-ref="equityBean" method="deleteFile" methodArguments="#[flowVars['BatchZipName']], ${General.fileroot}/${aws.subdirectory}/${aws.esb.zip.folder}" doc:name="Invoke"/>
+
+		<catch-exception-strategy doc:name="AWS Catch Exception Strategy">
+		<message-properties-transformer scope="session" doc:name="Message Properties">
+		<add-message-property key="errorprocess" value="#['AWS']"/>
+		<add-message-property key="errormessage" value="#['Failed to Unzip files']"/>
+		<add-message-property key="erroradditionaltext" value="#['Failed to Unzip files in AWS']"/>
+		</message-properties-transformer>
+		<vm:outbound-endpoint exchange-pattern="request-response" path="AWS.queue.VMError" doc:name="VMError"/>		  
+		</catch-exception-strategy>    
+	</flow>
+
+
+	<flow name="AWS_SetDocumentDetails"   processingStrategy="synchronous"> 	
+
+
+		<file:inbound-endpoint path="${aws.output.unzipfolder}"  connector-ref="File1" responseTimeout="10000" doc:name="File">
+		<file:filename-wildcard-filter pattern="*.xml,*.XML"/>
+		</file:inbound-endpoint>
+
+		<message-properties-transformer scope="invocation"  doc:name="CommonValues">
+		<add-message-property key="xmlName" value="#[header:filename]"/>
+		</message-properties-transformer>
+
+		<object-to-string-transformer doc:name="Object to String"/>
+
+		<message-properties-transformer scope="invocation" doc:name="Message Properties">
+		<add-message-property key="xmlMessage" value="#[payload]"/>         
+		</message-properties-transformer>
+		<message-properties-transformer scope="session" doc:name="Message Properties">
+		<add-message-property key="BatchName" value="#[flowVars['xmlName']]"/>  
+		</message-properties-transformer>
+
+
+		<set-payload doc:name="Set Payload" value="#[flowVars.xmlMessage]"/>
+
+
+		<message-properties-transformer  scope="session"   doc:name="CommonValues">
+		<add-message-property key="status" value="New"/>
+		<add-message-property key="messageId" value="#[message.id]"/>								
+		<add-message-property key="unzippedFilesFolder" value="${aws.output.unzipfolder}"/>		           					
+		</message-properties-transformer>
+
+
+		<dw:transform-message metadata:id="981eba41-39de-45a1-90b0-4829b580b191" doc:name="XMLtoJava">
+		<dw:input-payload doc:sample="AWSMetaData.XML" mimeType="application/xml"/>
+		<dw:set-payload><![CDATA[%dw 1.0
+		%output application/java
+		---
+		payload.Batch.DocumentGroup.*Document map ((document , indexOfDocument) -> {
+		deliveryType: document.DeliveryType,
+		documentId: document.DocumentID as :string,
+		filePath: document.FilePath
+		} as :object {
+		class : "uk.co.aws.bean.SPSDocument"
+		})]]></dw:set-payload>
+		</dw:transform-message>
+
+		<foreach  doc:name="For Each">	
+
+
+			<message-properties-transformer  scope="session"  doc:name="CommonValues">										
+			<add-message-property key="deliveryType" value="#[payload.deliveryType]"/>		
+			<add-message-property key="docId" value="#[payload.documentId]"/>													
+			<add-message-property key="docName" value="#[payload.filePath]"/>														
+			</message-properties-transformer>
+
+
+			<db:insert config-ref="Database" doc:name="InsertBatch">
+			<db:parameterized-query><![CDATA[insert into aws.awsdocument
+			(deliveryType,docId,docName,Status,XmlName) 
+			values (#[sessionVars.deliveryType],#[sessionVars.docId],#[sessionVars.docName],'New',#[flowVars.xmlName])]]>
+			</db:parameterized-query>
+			</db:insert>		
+
+		</foreach>
+		
+		<db:update config-ref="Database" doc:name="UpdateBatchProcessed">
+		<db:parameterized-query><![CDATA[update aws.awsbatch
+		set status='Processed'
+		where xmlName = #[flowVars['xmlName']]
+		]]></db:parameterized-query>
+		</db:update>
+
+
+		<catch-exception-strategy doc:name="AWS Catch Exception Strategy">
+		<message-properties-transformer scope="session" doc:name="Message Properties">
+		<add-message-property key="errorprocess" value="#['AWS']"/>
+		<add-message-property key="errormessage" value="#['Set Document details']"/>
+		<add-message-property key="erroradditionaltext" value="#['Failed to Set Document details in AWS']"/>
+		</message-properties-transformer>
+		<vm:outbound-endpoint exchange-pattern="request-response" path="AWS.queue.VMError" doc:name="VMError"/>		  
+		</catch-exception-strategy>   
+
+	</flow> 
+
+</mule>

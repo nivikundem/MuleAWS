@@ -1,0 +1,16 @@
+{
+    "inputMessageMetadata": {
+        "messagePayload": {
+            "connectorName": "#_custom_mule_metadata_type_#",
+            "typeId": "AWSMeta"
+        }
+    },
+    "outputMessageMetadata": {
+        "messagePayload": {
+            "connectorName": "#_custom_mule_metadata_type_#",
+            "typeId": "AWSMetaObject"
+        }
+    },
+    "id": "981eba41-39de-45a1-90b0-4829b580b191",
+    "version": "5.2.0.0"
+}

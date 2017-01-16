@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp"
+	xmlns:jdbc-ee="http://www.mulesoft.org/schema/mule/ee/jdbc"
+	xmlns:vm="http://www.mulesoft.org/schema/mule/vm" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:spring="http://www.springframework.org/schema/beans"  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/current/mule-smtp.xsd
+http://www.mulesoft.org/schema/mule/ee/jdbc http://www.mulesoft.org/schema/mule/ee/jdbc/current/mule-jdbc-ee.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+
+    <flow name="VRMErrorInsertVMFlow1">
+		<vm:inbound-endpoint exchange-pattern="request-response" path="AWS.queue.VMError" doc:name="VM"/>
+		<db:insert config-ref="Database" doc:name="InsertVMError">
+            <db:parameterized-query><![CDATA[INSERT INTO [LOGFailure] 
+			([Process],[Message],[AdditionalText],[servername]) 
+			VALUES(#[sessionVars.errorprocess],#[sessionVars.errormessage],left(#[sessionVars.erroradditionaltext],4000),#[sessionVars.hostserver]);]]></db:parameterized-query>
+
+		</db:insert>
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <logger message="&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt;&gt; AWS Error DB insert failed  &lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt;&lt; #[payload]" level="INFO" doc:name="Logger"/>
+            <smtp:outbound-endpoint host="${Email.smtpServerHost}" port="${Email.smtpServerPort}" connector-ref="SMTP" to="${Email.sendTo}" from="${Email.sendFrom}" subject="#['${General.environment} ESB: VRM - Failure logging failed - could not insert failure details to LOGFailures table in ESBData database ']" responseTimeout="10000" doc:name="Failure logging failed"/>
+
+        </catch-exception-strategy>
+    </flow>
+</mule>
+

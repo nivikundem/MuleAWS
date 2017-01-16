@@ -1,0 +1,17 @@
+{
+    "inputMessageMetadata": {
+        "sessionVariables": {
+            "docName": {
+                "connectorName": "#_custom_mule_metadata_type_#",
+                "typeId": "docId"
+            },
+            "docId": {
+                "connectorName": "#_custom_mule_metadata_type_#",
+                "typeId": "docId"
+            }
+        }
+    },
+    "outputMessageMetadata": {},
+    "id": "433cb5c6-b199-43a4-bfdd-f1a9b5684616",
+    "version": "5.2.0.0"
+}

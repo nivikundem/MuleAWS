@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:sqs="http://www.mulesoft.org/schema/mule/sqs" xmlns:s3="http://www.mulesoft.org/schema/mule/s3" xmlns:jdbc-ee="http://www.mulesoft.org/schema/mule/ee/jdbc"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:file="http://www.mulesoft.org/schema/mule/file"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/jdbc http://www.mulesoft.org/schema/mule/ee/jdbc/current/mule-jdbc-ee.xsd
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/current/mule-smtp.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/s3 http://www.mulesoft.org/schema/mule/s3/current/mule-s3.xsd
+http://www.mulesoft.org/schema/mule/sqs http://www.mulesoft.org/schema/mule/sqs/current/mule-sqs.xsd">
+
+
+	<context:property-placeholder location="classpath:General.properties,classpath:ESBData.properties,classpath:Aws.properties,classpath:Email.properties"/>	   
+	    <spring:beans>	
+			<spring:bean id="equityBean" name="uk.co.aws.util.EquityUtility" class="uk.co.aws.util.EquityUtility"/>
+		</spring:beans>	    
+
+	    
+	   	<db:mysql-config name="Database" host="${DB.host}" port="${DB.port}" user="${DB.user}" password="${DB.password}" database="${DB.database}" doc:name="MySQL Configuration"/>
+	   	<file:connector name="File" autoDelete="false" streaming="true" validateConnections="true" doc:name="File"/>
+	
+	    <file:connector name="File1" autoDelete="true" streaming="true" validateConnections="true" doc:name="File"/>	
+	    
+	
+		  <http:connector name="ConnectorWithoutMuleSession" doc:name="HTTP/HTTPS_Nosession">  
+		       <service-overrides sessionHandler="org.mule.session.NullSessionHandler"/>  
+		  </http:connector>  
+		  
+		  <smtp:connector name="SMTP" contentType="text/plain" validateConnections="true" doc:name="SMTP">
+		    <reconnect-forever/>
+		 </smtp:connector>
+		 <file:connector name="FileNODelete" autoDelete="false" streaming="true" validateConnections="true" doc:name="File"/>
+
+
+	    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+	    <http:request-config name="HTTP_Request_Configuration" host="www.mulesoft.com" port="80" doc:name="HTTP Request Configuration"/>
+       <s3:config name="Amazon_S3__Configuration" accessKey="${accessKey}" secretKey="${secretKey}" doc:name="Amazon S3: Configuration"/>
+    <sqs:config name="Amazon_SQS__Configuration" accessKey="${accessKey}" secretKey="${secretKey}" defaultQueueName="${defaultQueueName}" region="USWEST2" doc:name="Amazon SQS: Configuration"/>
+
+</mule>

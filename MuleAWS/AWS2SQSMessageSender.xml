@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:sqs="http://www.mulesoft.org/schema/mule/sqs" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/sqs http://www.mulesoft.org/schema/mule/sqs/current/mule-sqs.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+  
+  
+  
+    <flow name="AWS2SQSSendMessageFlow" processingStrategy="synchronous">        
+
+		<poll doc:name="Poll">
+		<fixed-frequency-scheduler frequency="${aws.sourceDbPollingFreq}"/>
+		<db:select config-ref="Database" doc:name="Get if any to do" target="payload">
+		<db:parameterized-query><![CDATA[SELECT awsdocumentID
+		FROM aws.awsdocument doc1
+		where doc1.Status ='New'
+		limit 1
+		]]></db:parameterized-query>
+		</db:select>
+		</poll>
+
+		<expression-filter expression="#[payload.size()&gt;0]" doc:name="Only if rows"/>
+
+		<message-properties-transformer scope="session" doc:name="Mule Msg ID">
+		<add-message-property key="mmid" value="#[message:id]"/>	 
+		<add-message-property key="dbmsg" value="#[new ArrayList()]"/> 
+		</message-properties-transformer>
+
+		<db:update config-ref="Database" doc:name="Update ready">
+		<db:parameterized-query><![CDATA[update aws.awsdocument
+		set Status='Ready', mmid = #[sessionVars.mmid]
+		,DateUpdated=CURRENT_TIMESTAMP
+		where Status ='New'
+		limit 10
+		]]></db:parameterized-query>
+		</db:update>
+
+		<enricher target="#[sessionVars.dbmsg]" doc:name="Message Enricher" >
+		<db:select config-ref="Database" doc:name="Get Records">
+		<db:parameterized-query><![CDATA[SELECT  awsdocumentID, docId,  docName , XmlName
+		FROM aws.awsdocument 
+		where mmid = #[sessionVars.mmid]
+		limit 10
+		]]></db:parameterized-query>
+		</db:select>
+		</enricher>
+
+		<message-properties-transformer scope="session" doc:name="Message Properties">  
+		<add-message-property key="bucketName" value="#[function:datestamp:yyyyMMddhhmmss]"/>				
+		</message-properties-transformer>
+
+		<foreach collection="#[sessionVars.dbmsg]" doc:name="For Each Messages">     
+
+			<message-properties-transformer scope="session" doc:name="Message Properties">  
+			<add-message-property key="awsdocumentID" value="#[payload.awsdocumentID]"/> 					
+			<add-message-property key="docId" value="#[payload.docId]"/>
+			<add-message-property key="docName" value="#[payload.docName]"/>					
+			</message-properties-transformer>
+			<dw:transform-message doc:name="varToJava" metadata:id="433cb5c6-b199-43a4-bfdd-f1a9b5684616">
+			<dw:input-session-variable mimeType="application/java" variableName="docName"/>
+			<dw:input-session-variable mimeType="application/java" variableName="docId"/>
+			<dw:set-payload><![CDATA[%dw 1.0
+			%output application/java
+			---
+			{
+			delaySeconds: 0,
+			messageBody: "docId : " ++ sessionVars.docId ++ ",docName : " ++ sessionVars.docName,
+			messageAttributes: {
+			"DocumentDetails": {
+			"stringValue" : sessionVars.docName,
+			"dataType" : "String"
+			} as :object {
+			class: "org.mule.modules.sqs.model.MessageAttributeValue"
+			}
+			} as :object {
+			class: "java.util.HashMap"
+			}
+			} as :object {
+			class: "org.mule.modules.sqs.model.Message"
+			}]]></dw:set-payload>
+			</dw:transform-message>
+
+		    <sqs:send-message config-ref="Amazon_SQS__Configuration" doc:name="Send Amazon SQS"/>
+			<db:update config-ref="Database" doc:name="Update Processed">
+			<db:parameterized-query><![CDATA[update aws.awsdocument
+			set Status='Processed'
+			,DateUpdated=CURRENT_TIMESTAMP
+			where  awsdocumentID = #[sessionVars.awsdocumentID]]]></db:parameterized-query>	
+			</db:update>
+
+		</foreach>
+		<catch-exception-strategy doc:name="AWS Catch Exception Strategy">
+		<message-properties-transformer scope="session" doc:name="Message Properties">
+		<add-message-property key="errorprocess" value="#['AWS']"/>
+		<add-message-property key="errormessage" value="#['Failed to send message to the AWS SQS']"/>
+		<add-message-property key="erroradditionaltext" value="#['Failed to send message to the AWS SQS']"/>
+		</message-properties-transformer>
+		<vm:outbound-endpoint exchange-pattern="request-response" path="AWS.queue.VMError" doc:name="VMError"/>		  
+		</catch-exception-strategy>  
+    </flow>
+    
+    <flow name="AWS2SQSMessageGetFlow">
+        <sqs:receive-messages config-ref="Amazon_SQS__Configuration" doc:name="Amazon SQS (Streaming)"/>
+        <logger message="Message :: #[payload]" level="INFO" doc:name="Logger"/>        
+        <catch-exception-strategy doc:name="AWS Catch Exception Strategy">
+		<message-properties-transformer scope="session" doc:name="Message Properties">
+		<add-message-property key="errorprocess" value="#['AWS']"/>
+		<add-message-property key="errormessage" value="#['Failed to retrieve message from the AWS SQS']"/>
+		<add-message-property key="erroradditionaltext" value="#['Failed to retrieve message from the AWS SQS']"/>
+		</message-properties-transformer>
+		<vm:outbound-endpoint exchange-pattern="request-response" path="AWS.queue.VMError" doc:name="VMError"/>		  
+		</catch-exception-strategy>  
+    </flow>
+
+</mule>

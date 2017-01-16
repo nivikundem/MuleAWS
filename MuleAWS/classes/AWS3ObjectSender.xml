@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:s3="http://www.mulesoft.org/schema/mule/s3" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/vm http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/s3 http://www.mulesoft.org/schema/mule/s3/current/mule-s3.xsd">
+
+    <flow name="AWS3CreateObjectFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/CreateObject" doc:name="HTTP"/>
+        <s3:create-bucket config-ref="Amazon_S3__Configuration" bucketName="nivibucket" acl="PUBLIC_READ" doc:name="Amazon S3"/>
+        <http:request config-ref="HTTP_Request_Configuration" path="sites/default/files/3C_mulesoft_logo_updated.svg" method="GET" doc:name="HTTP"/>
+        <s3:create-object config-ref="Amazon_S3__Configuration" bucketName="nivibucket" key="mulesoft.svg" acl="PUBLIC_READ" doc:name="Amazon S3 CreateObject"/>
+  
+  		<catch-exception-strategy doc:name="AWS Catch Exception Strategy">
+		<message-properties-transformer scope="session" doc:name="Message Properties">
+		<add-message-property key="errorprocess" value="#['AWS']"/>
+		<add-message-property key="errormessage" value="#['Failed to send object to the AWSS3']"/>
+		<add-message-property key="erroradditionaltext" value="#['Failed to send object to the AWSS3']"/>
+		</message-properties-transformer>
+		<vm:outbound-endpoint exchange-pattern="request-response" path="AWS.queue.VMError" doc:name="VMError"/>		  
+		</catch-exception-strategy>    
+    </flow>
+    
+    <flow name="AWS3GetObjectFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/GetObject" doc:name="HTTP"/>
+        <s3:get-object config-ref="Amazon_S3__Configuration" bucketName="nivibucket" key="mulesoft.svg" doc:name="Amazon S3 GetObject"/>   
+        <catch-exception-strategy doc:name="AWS Catch Exception Strategy">
+		<message-properties-transformer scope="session" doc:name="Message Properties">
+		<add-message-property key="errorprocess" value="#['AWS']"/>
+		<add-message-property key="errormessage" value="#['Failed to get object from the AWSS3']"/>
+		<add-message-property key="erroradditionaltext" value="#['Failed to get object from the AWSS3']"/>
+		</message-properties-transformer>
+		<vm:outbound-endpoint exchange-pattern="request-response" path="AWS.queue.VMError" doc:name="VMError"/>		  
+		</catch-exception-strategy>     
+    </flow>
+</mule>
